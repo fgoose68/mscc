@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI(title="MSCC API", version="0.1.0")
@@ -150,3 +152,7 @@ def health_summary() -> HealthSummary:
 @app.get("/api/services", response_model=list[Service])
 def list_services() -> list[Service]:
     return services
+
+
+if Path("dist").is_dir():
+    app.mount("/", StaticFiles(directory="dist", html=True), name="frontend")

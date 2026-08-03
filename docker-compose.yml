@@ -3,7 +3,7 @@ services:
     build: .
     container_name: mscc-control-center
     ports:
-      - "8000:8000"
+      - "5080:8000"
     volumes:
       - mscc-data:/app/data
     restart: unless-stopped

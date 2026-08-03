@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-The frontend runs on Vite's default development port. The backend can be started separately:
+The frontend is available on port `5080`. The backend can be started separately:
 
 ```bash
 python3 -m venv .venv
@@ -36,7 +36,11 @@ uvicorn backend.app.main:app --reload --port 8000
 docker compose up --build
 ```
 
-The container serves the API on port `8000`. The final visualisation port can be changed when the deployment target is defined.
+The application is exposed on port `5080`. The backend remains available inside the container on port `8000`.
+
+## Manuale utente
+
+La guida completa in italiano è disponibile in [MANUALE_UTENTE.md](MANUALE_UTENTE.md).
 
 ## Planned integration layers
 
