@@ -42,6 +42,8 @@ The application is exposed on port `5080`. The backend remains available inside 
 
 La guida completa in italiano è disponibile in [MANUALE_UTENTE.md](MANUALE_UTENTE.md).
 
+La roadmap passo-passo per lo sviluppo delle funzionalità è disponibile in [MANUALE_EVOLUZIONE.md](MANUALE_EVOLUZIONE.md).
+
 ## Planned integration layers
 
 1. MSCC Agent for secure node enrollment and metric collection.
