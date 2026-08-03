@@ -44,6 +44,8 @@ La guida completa in italiano è disponibile in [MANUALE_UTENTE.md](MANUALE_UTEN
 
 La roadmap passo-passo per lo sviluppo delle funzionalità è disponibile in [MANUALE_EVOLUZIONE.md](MANUALE_EVOLUZIONE.md).
 
+La mappa funzionale con confronto tra funzionalità attuali e finali è disponibile in [MANUALE_FUNZIONALITA.md](MANUALE_FUNZIONALITA.md).
+
 ## Planned integration layers
 
 1. MSCC Agent for secure node enrollment and metric collection.
