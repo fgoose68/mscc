@@ -30,6 +30,7 @@ declare module 'lucide-react' {
   export const LifeBuoy: ComponentType<LucideProps>
   export const LockKeyhole: ComponentType<LucideProps>
   export const Menu: ComponentType<LucideProps>
+  export const Moon: ComponentType<LucideProps>
   export const Network: ComponentType<LucideProps>
   export const Package: ComponentType<LucideProps>
   export const PanelLeftClose: ComponentType<LucideProps>
@@ -42,6 +43,7 @@ declare module 'lucide-react' {
   export const ShieldCheck: ComponentType<LucideProps>
   export const SlidersHorizontal: ComponentType<LucideProps>
   export const Sparkles: ComponentType<LucideProps>
+  export const Sun: ComponentType<LucideProps>
   export const TerminalSquare: ComponentType<LucideProps>
   export const Thermometer: ComponentType<LucideProps>
   export const UploadCloud: ComponentType<LucideProps>

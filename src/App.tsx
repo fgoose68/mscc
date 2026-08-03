@@ -24,6 +24,7 @@ import {
   LifeBuoy,
   LockKeyhole,
   Menu,
+  Moon,
   Network,
   Package,
   PanelLeftClose,
@@ -36,6 +37,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Sun,
   TerminalSquare,
   Thermometer,
   UploadCloud,
@@ -180,6 +182,10 @@ function App() {
   const [activePage, setActivePage] = useState('Overview')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window === 'undefined') return 'dark'
+    return window.localStorage.getItem('mscc-theme') === 'light' ? 'light' : 'dark'
+  })
   const [query, setQuery] = useState('')
   const [showCommand, setShowCommand] = useState(false)
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
@@ -200,8 +206,14 @@ function App() {
     window.setTimeout(() => setToast(''), 2800)
   }
 
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(nextTheme)
+    window.localStorage.setItem('mscc-theme', nextTheme)
+  }
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${theme === 'light' ? 'theme-light' : ''}`}>
       <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''} ${mobileNav ? 'sidebar-mobile-open' : ''}`}>
         <div className="brand">
           <div className="brand-mark"><Blocks size={19} strokeWidth={2.4} /></div>
@@ -255,6 +267,7 @@ function App() {
             <button className="command-trigger" onClick={() => setShowCommand(true)}><Search size={15} /><span>Search anything</span><kbd>⌘ K</kbd></button>
             <div className="live-status"><span className="live-dot" />All systems operational</div>
             <button className="icon-button notification-button" onClick={() => notify('You are all caught up')} aria-label="Notifications"><Bell size={18} /><i /></button>
+            <button className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Activate light mode' : 'Activate dark mode'} title={theme === 'dark' ? 'Modalità giorno' : 'Modalità notte'}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
             <button className="user-avatar top-user">F</button>
           </div>
         </header>
