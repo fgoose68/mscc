@@ -11,6 +11,7 @@ MSCC is the modular control plane for a multi-node MicroSaaS infrastructure. It 
 - Node-first navigation model that is not coupled to two machines
 - Module-ready screens for Docker, networks, volumes, images, reverse proxy, domains, DNS, backups, logs, health checks, reports and settings
 - Interactive command palette, node details drawer, alert actions and live-style service filtering
+- Manager/Worker foundation with persistent daily reports at 11:15 Europe/Rome and active alert tracking
 
 The UI currently uses representative data while the agent and SQLite persistence layers are connected. The API contract in `backend/app/main.py` is the starting point for those integrations.
 
@@ -54,3 +55,5 @@ La mappa funzionale con confronto tra funzionalità attuali e finali è disponib
 4. Notification rules and scheduled morning reports.
 5. Plugin registry with capability-scoped module manifests.
 6. AI Assistant for anomaly analysis and infrastructure recommendations.
+
+The current Docker Compose stack contains `mscc-manager` for the API/UI and `mscc-worker` for periodic checks and daily reporting. The worker is intentionally separate from the Manager so long-running checks do not block the web application.

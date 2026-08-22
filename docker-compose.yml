@@ -1,11 +1,37 @@
 services:
-  mscc:
+  mscc-manager:
     build: .
-    container_name: mscc-control-center
+    container_name: mscc-manager
     ports:
       - "5080:8000"
+    environment:
+      MSCC_DB_PATH: /app/data/mscc.db
+      MSCC_REPORT_TIME: 11:15
+      MSCC_TIMEZONE: Europe/Rome
     volumes:
       - mscc-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  mscc-worker:
+    build: .
+    container_name: mscc-worker
+    command: ["python", "-m", "backend.worker"]
+    environment:
+      MSCC_DB_PATH: /app/data/mscc.db
+      MSCC_REPORT_TIME: 11:15
+      MSCC_TIMEZONE: Europe/Rome
+      MSCC_WORKER_ID: report-worker
+      MSCC_WORKER_INTERVAL_SECONDS: 30
+    volumes:
+      - mscc-data:/app/data
+    depends_on:
+      mscc-manager:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

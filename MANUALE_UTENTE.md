@@ -475,7 +475,59 @@ Dopo un aggiornamento del codice, se si usa Docker:
 docker compose up --build -d
 ```
 
-## 18. Prossime evoluzioni consigliate
+## 18. Manager e report automatico
+
+La piattaforma include un'architettura iniziale Manager/Worker:
+
+- `mscc-manager` serve interfaccia e API sulla porta `5080`;
+- `mscc-worker` esegue controlli e attività pianificate;
+- il database SQLite viene conservato nel volume Docker `mscc-data`.
+
+Il worker invia un heartbeat ogni 30 secondi. La dashboard può mostrare:
+
+- stato del Manager;
+- stato del worker;
+- orario configurato del report;
+- fuso orario;
+- ultimo report;
+- numero di alert attivi.
+
+### Report quotidiano alle 11:15
+
+Ogni giorno alle **11:15**, nel fuso `Europe/Rome`, il worker genera un report idempotente. Se il processo viene riavviato dopo le 11:15, non vengono creati duplicati per la stessa giornata.
+
+Il report comprende:
+
+- numero di nodi totali e online;
+- stato dei servizi;
+- container rilevati;
+- media CPU e RAM;
+- massimo utilizzo disco;
+- massima temperatura;
+- warning;
+- alert critici;
+- dettagli delle anomalie rilevate.
+
+È possibile generare manualmente il report dalla dashboard tramite **Genera ora** o **Morning report**.
+
+### Controllo delle disattivazioni
+
+Il worker verifica periodicamente:
+
+- nodo non online;
+- servizio degradato o fermo;
+- certificato SSL con meno di 30 giorni;
+- risposta del servizio superiore a un secondo;
+- CPU superiore all'85%;
+- RAM superiore al 90%;
+- disco superiore all'85%;
+- temperatura superiore a 75 °C.
+
+Gli alert vengono salvati con un fingerprint stabile. Questo evita duplicati a ogni ciclo. Quando la condizione rientra, l'alert viene marcato come risolto.
+
+Questa implementazione usa ancora i dati dimostrativi presenti nel backend. Nelle fasi successive il worker utilizzerà dati reali provenienti da agenti, Docker, health check e integrazioni esterne.
+
+## 19. Prossime evoluzioni consigliate
 
 L'ordine consigliato per trasformare la base attuale in una piattaforma operativa è:
 

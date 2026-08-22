@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -79,6 +79,18 @@ type ActivityItem = {
   detail: string
   time: string
   kind: 'success' | 'warning' | 'info'
+}
+
+type ManagerSnapshot = {
+  manager: string
+  worker_id: string
+  worker_online: boolean
+  last_heartbeat: string | null
+  report_time: string
+  timezone: string
+  last_report: string | null
+  last_report_status: string | null
+  active_alerts: number
 }
 
 const nodes: Node[] = [
@@ -297,6 +309,35 @@ function App() {
 }
 
 function Overview({ services, query, setQuery, navigate, openNode, notify }: { services: Service[]; query: string; setQuery: (value: string) => void; navigate: (page: string) => void; openNode: (node: Node) => void; notify: (message: string) => void }) {
+  const [manager, setManager] = useState<ManagerSnapshot | null>(null)
+
+  const refreshManager = async () => {
+    try {
+      const response = await fetch('/api/manager/status')
+      if (!response.ok) throw new Error('Manager unavailable')
+      setManager(await response.json())
+    } catch {
+      setManager(null)
+    }
+  }
+
+  useEffect(() => {
+    refreshManager()
+    const interval = window.setInterval(refreshManager, 30000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  const generateReport = async () => {
+    try {
+      const response = await fetch('/api/reports/run', { method: 'POST' })
+      if (!response.ok) throw new Error('Report unavailable')
+      await refreshManager()
+      notify('Report operativo generato')
+    } catch {
+      notify('Manager non raggiungibile: report non generato')
+    }
+  }
+
   return (
     <>
       <section className="page-heading">
@@ -306,7 +347,7 @@ function Overview({ services, query, setQuery, navigate, openNode, notify }: { s
           <p>Here’s what’s happening across your MicroSaaS infrastructure.</p>
         </div>
         <div className="heading-actions">
-          <button className="button button-secondary" onClick={() => notify('Report generated and ready to share')}><FileText size={15} />Morning report</button>
+          <button className="button button-secondary" onClick={generateReport}><FileText size={15} />Morning report</button>
           <button className="button button-primary" onClick={() => navigate('Nodes')}><Plus size={16} />Add node</button>
         </div>
       </section>
@@ -356,6 +397,7 @@ function Overview({ services, query, setQuery, navigate, openNode, notify }: { s
         <div className="mini-panel backup-panel"><div className="mini-heading"><div className="mini-icon blue"><UploadCloud size={16} /></div><div><h3>Backup status</h3><span>Last successful backup</span></div><span className="status-pill healthy">Healthy</span></div><div className="backup-value"><strong>Today, 09:42</strong><span>4.8 GB · 2m 18s</span></div><div className="progress-track"><span style={{ width: '84%' }} /></div><div className="mini-footer"><span>Next backup in 13h 18m</span><button onClick={() => navigate('Backups')}>Details <ArrowUpRight size={13} /></button></div></div>
         <div className="mini-panel security-panel"><div className="mini-heading"><div className="mini-icon green"><ShieldCheck size={16} /></div><div><h3>Security posture</h3><span>Last scan 6 minutes ago</span></div><span className="status-pill healthy">Good</span></div><div className="security-checks"><span><Check size={13} /> HTTPS</span><span><Check size={13} /> Firewall</span><span><Check size={13} /> Tailscale</span></div><div className="mini-footer"><span>0 critical findings</span><button onClick={() => navigate('Health checks')}>View checks <ArrowUpRight size={13} /></button></div></div>
         <div className="mini-panel network-panel"><div className="mini-heading"><div className="mini-icon purple"><Wifi size={16} /></div><div><h3>Network & DNS</h3><span>OVH DynHost synchronization</span></div><span className="status-pill healthy">Synced</span></div><div className="network-value"><strong>185.142.64.21</strong><span>Public IP · updated 18 min ago</span></div><div className="mini-footer"><span>12 DNS records healthy</span><button onClick={() => navigate('DNS & DynHost')}>Manage DNS <ArrowUpRight size={13} /></button></div></div>
+        <div className="mini-panel manager-panel"><div className="mini-heading"><div className="mini-icon purple"><Blocks size={16} /></div><div><h3>MSCC Manager</h3><span>{manager?.worker_id ?? 'report-worker'}</span></div><span className={`status-pill ${manager ? manager.worker_online ? 'healthy' : 'warning' : 'maintenance'}`}>{manager ? manager.worker_online ? 'Online' : 'Offline' : 'Waiting'}</span></div><div className="manager-value"><strong>Report ore {manager?.report_time ?? '11:15'}</strong><span>{manager?.timezone ?? 'Europe/Rome'} · {manager?.active_alerts ?? 0} alert attivi</span></div><div className="mini-footer"><span>{manager?.last_report ? 'Ultimo report disponibile' : 'Nessun report generato'}</span><button onClick={generateReport}>Genera ora <ArrowUpRight size={13} /></button></div></div>
       </section>
     </>
   )

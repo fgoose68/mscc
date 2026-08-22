@@ -167,6 +167,33 @@ Stabilire convenzioni, ambienti e controlli prima di aggiungere funzionalità op
 - build frontend e compilazione backend passano;
 - una pull request contiene controlli ripetibili.
 
+## 5.1 Architettura Manager/Worker
+
+Per i controlli periodici MSCC utilizzerà un modello composto da:
+
+- `mscc-manager`: API, interfaccia web e coordinamento;
+- `mscc-worker`: processo indipendente per scheduler, controlli e report;
+- `mscc-data`: volume persistente condiviso nella fase SQLite.
+
+Il worker non sarà un contenitore Docker che avvia o controlla indiscriminatamente gli altri contenitori. Sarà un servizio applicativo con responsabilità limitate. Le operazioni sui Docker Engine dei nodi verranno delegate all'agente MSCC autenticato.
+
+Flusso:
+
+```text
+Manager API
+   ├── legge stato e alert dal database
+   ├── espone il report alla UI
+   └── riceve azioni autorizzate
+
+Worker
+   ├── heartbeat ogni 30 secondi
+   ├── controlla nodi e servizi
+   ├── sincronizza alert
+   └── genera il report alle 11:15 Europe/Rome
+```
+
+Questa separazione evita di bloccare l'API durante controlli lunghi e consente di riavviare il worker senza fermare l'interfaccia.
+
 ## 6. Fase 1 — Database SQLite e migrazioni
 
 ### Obiettivo

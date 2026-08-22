@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -6,15 +7,24 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from .reporting import (
+    get_alerts,
+    get_latest_report,
+    get_reports,
+    get_worker_heartbeat,
+    initialize_database,
+    save_report,
+)
 
 app = FastAPI(title="MSCC API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5080"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+initialize_database()
 
 
 class Node(BaseModel):
@@ -116,6 +126,26 @@ services = [
         ssl_days_remaining=61,
         response_time_ms=241,
     ),
+    Service(
+        id="service-n8n",
+        name="n8n Automations",
+        node_id="node-mac-mini",
+        container_name="n8n",
+        status="degraded",
+        domain="flows.microsaas.dev",
+        ssl_days_remaining=14,
+        response_time_ms=1200,
+    ),
+    Service(
+        id="service-vaultwarden",
+        name="Vaultwarden",
+        node_id="node-raspberry-pi",
+        container_name="vaultwarden",
+        status="healthy",
+        domain="vault.microsaas.dev",
+        ssl_days_remaining=102,
+        response_time_ms=204,
+    ),
 ]
 
 
@@ -152,6 +182,51 @@ def health_summary() -> HealthSummary:
 @app.get("/api/services", response_model=list[Service])
 def list_services() -> list[Service]:
     return services
+
+
+@app.get("/api/reports/latest")
+def latest_report() -> dict:
+    report = get_latest_report()
+    return report or {"status": "not_available", "message": "Nessun report generato"}
+
+
+@app.get("/api/reports")
+def list_reports(limit: int = 30) -> list[dict]:
+    return get_reports(limit)
+
+
+@app.get("/api/alerts")
+def list_alerts(active_only: bool = True) -> list[dict]:
+    return get_alerts(active_only)
+
+
+@app.post("/api/reports/run")
+def run_report() -> dict:
+    from .reporting import build_report
+
+    return save_report(build_report(nodes, services))
+
+
+@app.get("/api/manager/status")
+def manager_status() -> dict:
+    heartbeat = get_worker_heartbeat()
+    latest = get_latest_report()
+    active_alerts = get_alerts()
+    worker_online = False
+    if heartbeat:
+        heartbeat_time = datetime.fromisoformat(heartbeat["last_seen_at"])
+        worker_online = (datetime.now(timezone.utc) - heartbeat_time).total_seconds() <= 120
+    return {
+        "manager": "online",
+        "worker_id": heartbeat["worker_id"] if heartbeat else "report-worker",
+        "worker_online": worker_online,
+        "last_heartbeat": heartbeat["last_seen_at"] if heartbeat else None,
+        "report_time": os.getenv("MSCC_REPORT_TIME", "11:15"),
+        "timezone": os.getenv("MSCC_TIMEZONE", "Europe/Rome"),
+        "last_report": latest["generated_at"] if latest else None,
+        "last_report_status": latest["overall_status"] if latest else None,
+        "active_alerts": len(active_alerts),
+    }
 
 
 if Path("dist").is_dir():
