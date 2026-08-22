@@ -1,28 +1,28 @@
 # MSCC · MicroSaaS Control Center
 
-MSCC is the modular control plane for a multi-node MicroSaaS infrastructure. It is designed to progressively replace BoltUbuntu Dashboard and RaspyDashboard with one scalable platform for servers, Docker workloads, public services, networking, security and operations.
+MSCC è il control plane modulare dell'infrastruttura MicroSaaS multi-nodo. È progettato per sostituire progressivamente BoltUbuntu Dashboard e RaspyDashboard con un'unica piattaforma scalabile per server, workload Docker, servizi pubblici, rete, sicurezza e operazioni.
 
-## Current foundation
+## Fondamenta attuali
 
-- React + TypeScript + Vite frontend
-- FastAPI backend with typed node, health and service resources
-- SQLite-ready container layout
-- Responsive dark enterprise UI
-- Node-first navigation model that is not coupled to two machines
-- Module-ready screens for Docker, networks, volumes, images, reverse proxy, domains, DNS, backups, logs, health checks, reports and settings
-- Interactive command palette, node details drawer, alert actions and live-style service filtering
-- Manager/Worker foundation with persistent daily reports at 11:15 Europe/Rome and active alert tracking
+- Frontend React + TypeScript + Vite
+- Backend FastAPI con risorse tipizzate per nodi, salute e servizi
+- Struttura container pronta per SQLite
+- Interfaccia enterprise scura e responsive
+- Modello di navigazione basato sui nodi, non vincolato a due sole macchine
+- Schermate predisposte per Docker, reti, volumi, immagini, reverse proxy, domini, DNS, backup, log, health check, report e impostazioni
+- Command palette interattiva, pannello dettaglio nodo, azioni sugli alert e filtro dei servizi
+- Fondamenta Manager/Worker con report giornalieri persistenti alle 11:15 Europe/Rome e monitoraggio degli alert attivi
 
-The UI currently uses representative data while the agent and SQLite persistence layers are connected. The API contract in `backend/app/main.py` is the starting point for those integrations.
+L'interfaccia utilizza attualmente dati rappresentativi mentre i livelli dell'agente e della persistenza SQLite vengono collegati. Il contratto API in `backend/app/main.py` costituisce il punto di partenza per queste integrazioni.
 
-## Local development
+## Sviluppo locale
 
 ```bash
 npm install
 npm run dev
 ```
 
-The frontend is available on port `5080`. The backend can be started separately:
+Il frontend è disponibile sulla porta `5080`. Il backend può essere avviato separatamente:
 
 ```bash
 python3 -m venv .venv
@@ -37,23 +37,23 @@ uvicorn backend.app.main:app --reload --port 8000
 docker compose up --build
 ```
 
-The application is exposed on port `5080`. The backend remains available inside the container on port `8000`.
+L'applicazione è esposta sulla porta `5080`. Il backend rimane disponibile all'interno del container sulla porta `8000`.
 
 ## Manuale utente
 
-La guida completa in italiano è disponibile in [MANUALE_UTENTE.md](MANUALE_UTENTE.md).
+La guida completa per l'utilizzo è disponibile in [MANUALE_UTENTE.md](MANUALE_UTENTE.md).
 
 La roadmap passo-passo per lo sviluppo delle funzionalità è disponibile in [MANUALE_EVOLUZIONE.md](MANUALE_EVOLUZIONE.md).
 
-La mappa funzionale con confronto tra funzionalità attuali e finali è disponibile in [MANUALE_FUNZIONALITA.md](MANUALE_FUNZIONALITA.md).
+La mappa funzionale con il confronto tra funzionalità attuali e finali è disponibile in [MANUALE_FUNZIONALITA.md](MANUALE_FUNZIONALITA.md).
 
-## Planned integration layers
+## Livelli di integrazione previsti
 
-1. MSCC Agent for secure node enrollment and metric collection.
-2. SQLModel/SQLite persistence with PostgreSQL-compatible migrations.
-3. Docker Engine, Nginx Proxy Manager, OVH DNS, Tailscale and Pushover adapters.
-4. Notification rules and scheduled morning reports.
-5. Plugin registry with capability-scoped module manifests.
-6. AI Assistant for anomaly analysis and infrastructure recommendations.
+1. Agente MSCC per la registrazione sicura dei nodi e la raccolta delle metriche.
+2. Persistenza SQLModel/SQLite con migrazioni compatibili con PostgreSQL.
+3. Adapter per Docker Engine, Nginx Proxy Manager, OVH DNS, Tailscale e Pushover.
+4. Regole di notifica e report mattutini pianificati.
+5. Registro dei plugin con manifest e permessi limitati alle capacità necessarie.
+6. AI Assistant per l'analisi delle anomalie e le raccomandazioni sull'infrastruttura.
 
-The current Docker Compose stack contains `mscc-manager` for the API/UI and `mscc-worker` for periodic checks and daily reporting. The worker is intentionally separate from the Manager so long-running checks do not block the web application.
+Lo stack Docker Compose attuale contiene `mscc-manager` per API e interfaccia web e `mscc-worker` per i controlli periodici e i report giornalieri. Il worker è intenzionalmente separato dal Manager, così i controlli di lunga durata non bloccano l'applicazione web.
