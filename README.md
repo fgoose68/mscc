@@ -57,3 +57,16 @@ La mappa funzionale con il confronto tra funzionalità attuali e finali è dispo
 6. AI Assistant per l'analisi delle anomalie e le raccomandazioni sull'infrastruttura.
 
 Lo stack Docker Compose attuale contiene `mscc-manager` per API e interfaccia web e `mscc-worker` per i controlli periodici e i report giornalieri. Il worker è intenzionalmente separato dal Manager, così i controlli di lunga durata non bloccano l'applicazione web.
+
+## In breve MSCC
+
+MSCC è il centro di controllo unico della tua infrastruttura MicroSaaS.
+Permetterà di gestire Mac mini, Raspberry Pi, VPS, NAS e futuri server.
+Monitorerà CPU, RAM, disco, temperatura, uptime e stato dei nodi.
+Controllerà container Docker, immagini, volumi, reti e log.
+Verificherà servizi pubblici, domini, certificati SSL e reverse proxy.
+Gestirà DNS, DynHost, IP pubblico, Tailscale, firewall e sicurezza.
+Controllerà backup, health check, aggiornamenti e anomalie operative.
+Invierà notifiche e genererà automaticamente un report ogni giorno alle 11:15.
+Sostituirà progressivamente BoltUbuntu Dashboard e RaspyDashboard.
+L'obiettivo finale è avere un vero sistema operativo centralizzato per tutta l'infrastruttura MicroSaaS.
