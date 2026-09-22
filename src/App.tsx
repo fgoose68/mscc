@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -10,8 +10,6 @@ import {
   Check,
   ChevronDown,
   CircleHelp,
-  CircleStack,
-  Cloud,
   Container,
   Cpu,
   Database,
@@ -21,7 +19,6 @@ import {
   Globe2,
   HardDrive,
   LayoutDashboard,
-  LifeBuoy,
   LockKeyhole,
   Menu,
   Moon,
@@ -35,7 +32,6 @@ import {
   Server,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Sun,
   TerminalSquare,
@@ -49,6 +45,7 @@ type Icon = typeof Activity
 type Status = 'online' | 'warning' | 'offline' | 'maintenance'
 
 type Node = {
+  id: string
   name: string
   description: string
   host: string
@@ -61,15 +58,20 @@ type Node = {
   disk: number
   temperature: number
   containers: number
+  dockerVersion: string
+  dockerComposeVersion: string
 }
 
 type Service = {
+  id: string
   name: string
+  nodeId: string
   node: string
   container: string
   status: 'Healthy' | 'Degraded' | 'Stopped'
   domain: string
   ssl: string
+  sslDays: number
   response: string
   color: string
 }
@@ -93,6 +95,68 @@ type ManagerSnapshot = {
   active_alerts: number
 }
 
+type StatCard = {
+  label: string
+  value: string
+  trend: string
+  direction: 'up' | 'down' | 'neutral'
+  icon: Icon
+  tone: string
+}
+
+type ApiNode = {
+  id: string
+  name: string
+  description: string
+  hostname: string
+  operating_system: string
+  architecture: string
+  status: 'online' | 'offline' | 'maintenance'
+  cpu_percent: number
+  ram_percent: number
+  disk_percent: number
+  temperature_celsius: number
+  docker_version: string
+  docker_compose_version: string
+  uptime_seconds: number
+  container_count: number
+}
+
+type ApiService = {
+  id: string
+  name: string
+  node_id: string
+  container_name: string
+  status: 'healthy' | 'degraded' | 'stopped'
+  domain: string
+  ssl_days_remaining: number
+  response_time_ms: number
+}
+
+type HealthSummary = {
+  cpu_percent: number
+  ram_percent: number
+  disk_percent: number
+  temperature_celsius: number
+  running_containers: number
+  stopped_containers: number
+  warnings: number
+  critical_alerts: number
+  collected_at: string
+}
+
+type Alert = {
+  id: number
+  fingerprint: string
+  severity: 'critical' | 'warning'
+  title: string
+  detail: string
+  is_active: number
+  first_seen_at: string
+  last_seen_at: string
+  resolved_at: string | null
+}
+
 const nodeStatusLabels: Record<Status, string> = {
   online: 'Attivo',
   warning: 'Attenzione',
@@ -106,104 +170,201 @@ const serviceStatusLabels: Record<Service['status'], string> = {
   Stopped: 'Fermato'
 }
 
-const nodes: Node[] = [
-  {
-    name: 'Mac mini',
-    description: 'Server di produzione principale',
-    host: 'macmini.local',
-    os: 'Ubuntu 24.04 LTS',
-    arch: 'x86_64',
-    status: 'online',
-    uptime: '14 g 06 h 42 min',
-    cpu: 28,
-    ram: 61,
-    disk: 72,
-    temperature: 48,
-    containers: 18
-  },
-  {
-    name: 'Raspberry Pi',
-    description: 'Edge e automazione domestica',
-    host: 'raspberrypi.local',
-    os: 'Raspberry Pi OS',
-    arch: 'aarch64',
-    status: 'warning',
-    uptime: '8 g 11 h 09 min',
-    cpu: 46,
-    ram: 74,
-    disk: 64,
-    temperature: 57,
-    containers: 7
-  },
-  {
-    name: 'VPS Europe',
-    description: 'Workload cloud pubblico',
-    host: 'vps-eu-01',
-    os: 'Ubuntu 22.04 LTS',
-    arch: 'x86_64',
-    status: 'online',
-    uptime: '42 g 19 h 17 min',
-    cpu: 17,
-    ram: 43,
-    disk: 39,
-    temperature: 34,
-    containers: 11
+const serviceColors = ['#7c8dff', '#50c7a5', '#ffad62', '#bb8cff', '#65baf9', '#f77f83', '#9ba8ff', '#65d6b0']
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return `${days} g ${String(hours).padStart(2, '0')} h ${String(minutes).padStart(2, '0')} min`
+}
+
+function formatSsl(days: number): string {
+  return `${days} giorni`
+}
+
+function formatResponse(ms: number): string {
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1).replace('.', ',')} s`
+  return `${ms} ms`
+}
+
+function formatRelativeTime(iso: string): string {
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (diff < 60) return `${diff} sec fa`
+  if (diff < 3600) return `${Math.floor(diff / 60)} min fa`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ore fa`
+  return `${Math.floor(diff / 86400)} giorni fa`
+}
+
+function deriveStatus(apiNode: ApiNode): Status {
+  if (apiNode.status !== 'online') return apiNode.status
+  if (apiNode.cpu_percent >= 80 || apiNode.ram_percent >= 70 || apiNode.disk_percent >= 80 || apiNode.temperature_celsius >= 55) {
+    return 'warning'
   }
-]
+  return 'online'
+}
 
-const services: Service[] = [
-  { name: 'Status Page', node: 'Mac mini', container: 'status-page', status: 'Healthy', domain: 'status.microsaas.dev', ssl: '89 giorni', response: '182 ms', color: '#7c8dff' },
-  { name: 'Analytics Hub', node: 'VPS Europe', container: 'plausible', status: 'Healthy', domain: 'analytics.microsaas.dev', ssl: '61 giorni', response: '241 ms', color: '#50c7a5' },
-  { name: 'n8n Automations', node: 'Mac mini', container: 'n8n', status: 'Degraded', domain: 'flows.microsaas.dev', ssl: '14 giorni', response: '1,2 s', color: '#ffad62' },
-  { name: 'Vaultwarden', node: 'Raspberry Pi', container: 'vaultwarden', status: 'Healthy', domain: 'vault.microsaas.dev', ssl: '102 giorni', response: '204 ms', color: '#bb8cff' }
-]
+function transformNode(apiNode: ApiNode): Node {
+  return {
+    id: apiNode.id,
+    name: apiNode.name,
+    description: apiNode.description,
+    host: apiNode.hostname,
+    os: apiNode.operating_system,
+    arch: apiNode.architecture,
+    status: deriveStatus(apiNode),
+    uptime: formatUptime(apiNode.uptime_seconds),
+    cpu: Math.round(apiNode.cpu_percent),
+    ram: Math.round(apiNode.ram_percent),
+    disk: Math.round(apiNode.disk_percent),
+    temperature: Math.round(apiNode.temperature_celsius),
+    containers: apiNode.container_count,
+    dockerVersion: apiNode.docker_version,
+    dockerComposeVersion: apiNode.docker_compose_version,
+  }
+}
 
-const activity: ActivityItem[] = [
-  { title: 'Backup completato', detail: 'Mac mini · 4,8 GB caricati su S3', time: '12 min fa', kind: 'success' },
-  { title: 'Container riavviato', detail: 'n8n su Mac mini · controllo di salute ripristinato', time: '28 min fa', kind: 'warning' },
-  { title: 'Nuovo IP pubblico rilevato', detail: 'Raspberry Pi · record DynHost sincronizzato', time: '1 ora fa', kind: 'info' },
-  { title: 'Aggiornamento Docker disponibile', detail: 'Mac mini · Docker Engine 27.4.1', time: '3 ore fa', kind: 'info' }
-]
+function transformService(apiService: ApiService, nodeName: string, index: number): Service {
+  const statusMap: Record<string, Service['status']> = {
+    healthy: 'Healthy',
+    degraded: 'Degraded',
+    stopped: 'Stopped',
+  }
+  return {
+    id: apiService.id,
+    name: apiService.name,
+    nodeId: apiService.node_id,
+    node: nodeName,
+    container: apiService.container_name,
+    status: statusMap[apiService.status] ?? 'Stopped',
+    domain: apiService.domain,
+    ssl: formatSsl(apiService.ssl_days_remaining),
+    sslDays: apiService.ssl_days_remaining,
+    response: formatResponse(apiService.response_time_ms),
+    color: serviceColors[index % serviceColors.length],
+  }
+}
 
-const navSections: { label: string; items: { label: string; icon: Icon; badge?: string }[] }[] = [
-  {
-    label: 'Area di lavoro',
-    items: [
-      { label: 'Overview', icon: LayoutDashboard },
-      { label: 'Nodes', icon: Server, badge: '3' },
-      { label: 'Services', icon: Globe2 }
-    ]
-  },
-  {
-    label: 'Infrastruttura',
-    items: [
-      { label: 'Docker', icon: Container },
-      { label: 'Networks', icon: Network },
-      { label: 'Volumes', icon: HardDrive },
-      { label: 'Images', icon: Package },
-      { label: 'Reverse Proxy', icon: Globe2 }
-    ]
-  },
-  {
-    label: 'Operazioni',
-    items: [
-      { label: 'Domains & SSL', icon: LockKeyhole, badge: '2' },
-      { label: 'DNS & DynHost', icon: Wifi },
-      { label: 'Backups', icon: Database },
-      { label: 'Logs', icon: TerminalSquare },
-      { label: 'Health checks', icon: ShieldCheck }
+type InfraData = {
+  nodes: Node[]
+  services: Service[]
+  health: HealthSummary | null
+  alerts: Alert[]
+  loading: boolean
+  error: string | null
+  refresh: () => void
+}
+
+function useInfrastructureData(): InfraData {
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [services, setServices] = useState<Service[]>([])
+  const [health, setHealth] = useState<HealthSummary | null>(null)
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    try {
+      const [nodesRes, servicesRes, healthRes, alertsRes] = await Promise.all([
+        fetch('/api/nodes'),
+        fetch('/api/services'),
+        fetch('/api/health/summary'),
+        fetch('/api/alerts'),
+      ])
+      if (!nodesRes.ok || !servicesRes.ok || !healthRes.ok || !alertsRes.ok) {
+        throw new Error('API unavailable')
+      }
+      const apiNodes: ApiNode[] = await nodesRes.json()
+      const apiServices: ApiService[] = await servicesRes.json()
+      const healthData: HealthSummary = await healthRes.json()
+      const alertsData: Alert[] = await alertsRes.json()
+
+      const nodeMap = new Map(apiNodes.map(n => [n.id, n.name]))
+      setNodes(apiNodes.map(transformNode))
+      setServices(apiServices.map((s, i) => transformService(s, nodeMap.get(s.node_id) ?? 'Unknown', i)))
+      setHealth(healthData)
+      setAlerts(alertsData)
+      setError(null)
+    } catch {
+      setError('Impossibile caricare i dati dall\'API')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    const interval = window.setInterval(refresh, 30000)
+    return () => window.clearInterval(interval)
+  }, [refresh])
+
+  return { nodes, services, health, alerts, loading, error, refresh }
+}
+
+function buildNavSections(nodeCount: number, sslWarningCount: number): { label: string; items: { label: string; icon: Icon; badge?: string }[] }[] {
+  return [
+    {
+      label: 'Area di lavoro',
+      items: [
+        { label: 'Overview', icon: LayoutDashboard },
+        { label: 'Nodes', icon: Server, badge: nodeCount > 0 ? String(nodeCount) : undefined },
+        { label: 'Services', icon: Globe2 }
+      ]
+    },
+    {
+      label: 'Infrastruttura',
+      items: [
+        { label: 'Docker', icon: Container },
+        { label: 'Networks', icon: Network },
+        { label: 'Volumes', icon: HardDrive },
+        { label: 'Images', icon: Package },
+        { label: 'Reverse Proxy', icon: Globe2 }
+      ]
+    },
+    {
+      label: 'Operazioni',
+      items: [
+        { label: 'Domains & SSL', icon: LockKeyhole, badge: sslWarningCount > 0 ? String(sslWarningCount) : undefined },
+        { label: 'DNS & DynHost', icon: Wifi },
+        { label: 'Backups', icon: Database },
+        { label: 'Logs', icon: TerminalSquare },
+        { label: 'Health checks', icon: ShieldCheck }
+      ]
+    }
+  ]
+}
+
+function buildStatCards(health: HealthSummary | null): StatCard[] {
+  if (!health) {
+    return [
+      { label: 'Utilizzo CPU', value: '—', trend: 'Caricamento', direction: 'neutral', icon: Cpu, tone: 'purple' },
+      { label: 'Memoria', value: '—', trend: 'Caricamento', direction: 'neutral', icon: Database, tone: 'blue' },
+      { label: 'Spazio disco', value: '—', trend: 'Caricamento', direction: 'neutral', icon: HardDrive, tone: 'orange' },
+      { label: 'Temperatura', value: '—', trend: 'Caricamento', direction: 'neutral', icon: Thermometer, tone: 'green' },
     ]
   }
-]
+  return [
+    { label: 'Utilizzo CPU', value: `${health.cpu_percent}%`, trend: health.warnings > 0 ? `${health.warnings} alert` : 'Stabile', direction: health.warnings > 0 ? 'up' : 'neutral', icon: Cpu, tone: 'purple' },
+    { label: 'Memoria', value: `${health.ram_percent}%`, trend: health.critical_alerts > 0 ? `${health.critical_alerts} critici` : 'Stabile', direction: health.critical_alerts > 0 ? 'up' : 'neutral', icon: Database, tone: 'blue' },
+    { label: 'Spazio disco', value: `${health.disk_percent}%`, trend: `${health.running_containers} container attivi`, direction: 'neutral', icon: HardDrive, tone: 'orange' },
+    { label: 'Temperatura', value: `${health.temperature_celsius}° C`, trend: health.stopped_containers > 0 ? `${health.stopped_containers} fermati` : 'Stabile', direction: health.stopped_containers > 0 ? 'up' : 'neutral', icon: Thermometer, tone: 'green' },
+  ]
+}
 
-const statCards = [
-  { label: 'Utilizzo CPU', value: '27.4%', trend: '+4.2%', direction: 'up', icon: Cpu, tone: 'purple' },
-  { label: 'Memoria', value: '7.6 / 16 GB', trend: '-1.8%', direction: 'down', icon: Database, tone: 'blue' },
-  { label: 'Spazio disco', value: '1.84 / 3.2 TB', trend: '+2.1%', direction: 'up', icon: HardDrive, tone: 'orange' },
-  { label: 'Temperatura', value: '46° C', trend: 'Stabile', direction: 'neutral', icon: Thermometer, tone: 'green' }
-]
+function buildActivity(alerts: Alert[]): ActivityItem[] {
+  return alerts
+    .filter(a => a.is_active)
+    .slice(0, 6)
+    .map(a => ({
+      title: a.title,
+      detail: a.detail,
+      time: formatRelativeTime(a.last_seen_at),
+      kind: a.severity === 'critical' ? 'warning' : 'info',
+    }))
+}
 
 function App() {
+  const { nodes, services, health, alerts, loading, error, refresh } = useInfrastructureData()
   const [activePage, setActivePage] = useState('Overview')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
@@ -218,8 +379,19 @@ function App() {
 
   const filteredServices = useMemo(
     () => services.filter((service) => `${service.name} ${service.domain} ${service.node}`.toLowerCase().includes(query.toLowerCase())),
-    [query]
+    [services, query]
   )
+
+  const sslWarningCount = services.filter(s => s.sslDays <= 30).length
+  const navSections = buildNavSections(nodes.length, sslWarningCount)
+
+  const systemStatus = health
+    ? health.critical_alerts > 0
+      ? { text: 'Sistemi richiedono attenzione', tone: 'warning' }
+      : health.warnings > 0
+        ? { text: 'Sistemi parzialmente operativi', tone: 'warning' }
+        : { text: 'Tutti i sistemi sono operativi', tone: 'healthy' }
+    : { text: 'Caricamento...', tone: 'maintenance' }
 
   const navigate = (page: string) => {
     setActivePage(page)
@@ -290,7 +462,7 @@ function App() {
           <div className="breadcrumbs"><span>MicroSaaS Core</span><span>/</span><strong>{activePage}</strong></div>
           <div className="topbar-actions">
             <button className="command-trigger" onClick={() => setShowCommand(true)}><Search size={15} /><span>Cerca ovunque</span><kbd>⌘ K</kbd></button>
-            <div className="live-status"><span className="live-dot" />Tutti i sistemi sono operativi</div>
+            <div className="live-status"><span className={`live-dot ${systemStatus.tone}`} />{systemStatus.text}</div>
             <button className="icon-button notification-button" onClick={() => notify('Non ci sono nuove notifiche')} aria-label="Notifiche"><Bell size={18} /><i /></button>
             <button className="icon-button theme-toggle" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Attiva modalità giorno' : 'Attiva modalità notte'} title={theme === 'dark' ? 'Modalità giorno' : 'Modalità notte'}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
             <button className="user-avatar top-user">F</button>
@@ -300,15 +472,21 @@ function App() {
         <div className="page">
           {activePage === 'Overview' ? (
             <Overview
+              nodes={nodes}
               services={filteredServices}
+              health={health}
+              alerts={alerts}
               query={query}
               setQuery={setQuery}
               navigate={navigate}
               openNode={setSelectedNode}
               notify={notify}
+              refresh={refresh}
+              loading={loading}
+              error={error}
             />
           ) : (
-            <ModulePage module={activePage} navigate={navigate} notify={notify} />
+            <ModulePage module={activePage} nodes={nodes} services={services} navigate={navigate} notify={notify} refresh={refresh} />
           )}
         </div>
       </main>
@@ -321,7 +499,7 @@ function App() {
   )
 }
 
-function Overview({ services, query, setQuery, navigate, openNode, notify }: { services: Service[]; query: string; setQuery: (value: string) => void; navigate: (page: string) => void; openNode: (node: Node) => void; notify: (message: string) => void }) {
+function Overview({ nodes, services, health, alerts, query, setQuery, navigate, openNode, notify, refresh, loading, error }: { nodes: Node[]; services: Service[]; health: HealthSummary | null; alerts: Alert[]; query: string; setQuery: (value: string) => void; navigate: (page: string) => void; openNode: (node: Node) => void; notify: (message: string) => void; refresh: () => void; loading: boolean; error: string | null }) {
   const [manager, setManager] = useState<ManagerSnapshot | null>(null)
 
   const refreshManager = async () => {
@@ -345,14 +523,30 @@ function Overview({ services, query, setQuery, navigate, openNode, notify }: { s
       const response = await fetch('/api/reports/run', { method: 'POST' })
       if (!response.ok) throw new Error('Report unavailable')
       await refreshManager()
+      refresh()
       notify('Report operativo generato')
     } catch {
       notify('Manager non raggiungibile: report non generato')
     }
   }
 
+  const statCards = buildStatCards(health)
+  const activeAlerts = alerts.filter(a => a.is_active)
+  const activity = buildActivity(alerts)
+
   return (
     <>
+      {loading && nodes.length === 0 && (
+        <div className="module-note"><RefreshCw size={15} className="spin" /><span>Caricamento dati dall'API...</span></div>
+      )}
+      {error && nodes.length === 0 && (
+        <div className="alert-banner" style={{ borderLeftColor: 'var(--red)' }}>
+          <div className="alert-symbol" style={{ color: 'var(--red)', background: '#f77f8318' }}><AlertTriangle size={17} /></div>
+          <div><strong>Backend non raggiungibile</strong><span>L'API non risponde. Verifica che il backend sia in esecuzione.</span></div>
+          <button onClick={refresh}>Riprova <RefreshCw size={14} /></button>
+        </div>
+      )}
+
       <section className="page-heading">
         <div>
           <div className="eyebrow"><span className="eyebrow-line" />Panoramica infrastrutturale</div>
@@ -365,12 +559,14 @@ function Overview({ services, query, setQuery, navigate, openNode, notify }: { s
         </div>
       </section>
 
-      <div className="alert-banner">
-        <div className="alert-symbol"><AlertTriangle size={17} /></div>
-        <div><strong>3 elementi richiedono attenzione</strong><span>Un servizio è degradato, risponde lentamente e un certificato SSL scade tra 14 giorni.</span></div>
-        <button onClick={() => navigate('Domains & SSL')}>Esamina alert <ArrowUpRight size={14} /></button>
-        <button className="alert-dismiss" onClick={() => notify('Alert posticipato di 1 ora')} aria-label="Posticipa alert"><FileClock size={15} /></button>
-      </div>
+      {activeAlerts.length > 0 && (
+        <div className="alert-banner">
+          <div className="alert-symbol"><AlertTriangle size={17} /></div>
+          <div><strong>{activeAlerts.length} elementi richiedono attenzione</strong><span>{activeAlerts.slice(0, 2).map(a => a.title).join(' · ')}</span></div>
+          <button onClick={() => navigate('Domains & SSL')}>Esamina alert <ArrowUpRight size={14} /></button>
+          <button className="alert-dismiss" onClick={() => notify('Alert posticipato di 1 ora')} aria-label="Posticipa alert"><FileClock size={15} /></button>
+        </div>
+      )}
 
       <section className="stats-grid">
         {statCards.map((stat) => {
@@ -384,31 +580,41 @@ function Overview({ services, query, setQuery, navigate, openNode, notify }: { s
       </section>
 
       <section className="section-block">
-        <div className="section-heading"><div><h2>Nodes</h2><p>3 nodi connessi · Aggiornato proprio ora</p></div><button className="text-button" onClick={() => navigate('Nodes')}>Visualizza tutti i nodi <ArrowUpRight size={14} /></button></div>
+        <div className="section-heading"><div><h2>Nodes</h2><p>{nodes.length} nodi connessi · Aggiornato proprio ora</p></div><button className="text-button" onClick={() => navigate('Nodes')}>Visualizza tutti i nodi <ArrowUpRight size={14} /></button></div>
         <div className="node-grid">
-          {nodes.map((node) => <NodeCard key={node.name} node={node} onOpen={() => openNode(node)} />)}
+          {nodes.map((node) => <NodeCard key={node.id} node={node} onOpen={() => openNode(node)} />)}
           <button className="add-node-card" onClick={() => navigate('Nodes')}><div><Plus size={19} /></div><strong>Connetti un nuovo nodo</strong><span>NAS, VPS, Mini PC o cloud</span></button>
         </div>
       </section>
 
       <div className="dashboard-columns">
         <section className="section-block services-block">
-        <div className="section-heading"><div><h2>Public services</h2><p>4 applicazioni monitorate</p></div><button className="text-button" onClick={() => navigate('Services')}>Gestisci servizi <ArrowUpRight size={14} /></button></div>
-          <div className="service-toolbar"><div className="inline-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtra servizi..." /></div><button className="icon-button" onClick={() => notify('Dati dei servizi aggiornati')} aria-label="Aggiorna servizi"><RefreshCw size={15} /></button></div>
+        <div className="section-heading"><div><h2>Public services</h2><p>{services.length} applicazioni monitorate</p></div><button className="text-button" onClick={() => navigate('Services')}>Gestisci servizi <ArrowUpRight size={14} /></button></div>
+          <div className="service-toolbar"><div className="inline-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtra servizi..." /></div><button className="icon-button" onClick={() => { refresh(); notify('Dati dei servizi aggiornati') }} aria-label="Aggiorna servizi"><RefreshCw size={15} /></button></div>
           <div className="service-list">
-            {services.map((service) => <ServiceRow key={service.name} service={service} onOpen={() => notify(`Apertura di ${service.domain}`)} />)}
+            {services.length > 0 ? (
+              services.map((service) => <ServiceRow key={service.id} service={service} onOpen={() => notify(`Apertura di ${service.domain}`)} />)
+            ) : (
+              <div className="service-row" style={{ justifyContent: 'center', padding: '20px' }}><span style={{ color: 'var(--muted)' }}>Nessun servizio trovato</span></div>
+            )}
           </div>
         </section>
         <section className="section-block activity-block">
           <div className="section-heading"><div><h2>Recent activity</h2><p>Su tutti i nodi</p></div><button className="icon-button" onClick={() => navigate('Logs')} aria-label="Visualizza log"><ExternalLink size={15} /></button></div>
-          <div className="activity-list">{activity.map((item) => <ActivityRow key={item.title + item.time} item={item} />)}</div>
+          <div className="activity-list">
+            {activity.length > 0 ? (
+              activity.map((item) => <ActivityRow key={item.title + item.time} item={item} />)
+            ) : (
+              <div className="activity-row" style={{ justifyContent: 'center', padding: '20px' }}><span style={{ color: 'var(--muted)' }}>Nessuna attività recente</span></div>
+            )}
+          </div>
           <button className="activity-footer" onClick={() => navigate('Logs')}>Visualizza registro attività <ArrowUpRight size={14} /></button>
         </section>
       </div>
 
       <section className="bottom-grid">
         <div className="mini-panel backup-panel"><div className="mini-heading"><div className="mini-icon blue"><UploadCloud size={16} /></div><div><h3>Backup status</h3><span>Ultimo backup completato</span></div><span className="status-pill healthy">Sano</span></div><div className="backup-value"><strong>Oggi, 09:42</strong><span>4,8 GB · 2m 18s</span></div><div className="progress-track"><span style={{ width: '84%' }} /></div><div className="mini-footer"><span>Prossimo backup tra 13h 18m</span><button onClick={() => navigate('Backups')}>Dettagli <ArrowUpRight size={13} /></button></div></div>
-        <div className="mini-panel security-panel"><div className="mini-heading"><div className="mini-icon green"><ShieldCheck size={16} /></div><div><h3>Security posture</h3><span>Ultima scansione 6 minuti fa</span></div><span className="status-pill healthy">Buona</span></div><div className="security-checks"><span><Check size={13} /> HTTPS</span><span><Check size={13} /> Firewall</span><span><Check size={13} /> Tailscale</span></div><div className="mini-footer"><span>0 rilevazioni critiche</span><button onClick={() => navigate('Health checks')}>Visualizza controlli <ArrowUpRight size={13} /></button></div></div>
+        <div className="mini-panel security-panel"><div className="mini-heading"><div className="mini-icon green"><ShieldCheck size={16} /></div><div><h3>Security posture</h3><span>Ultima scansione 6 minuti fa</span></div><span className="status-pill healthy">Buona</span></div><div className="security-checks"><span><Check size={13} /> HTTPS</span><span><Check size={13} /> Firewall</span><span><Check size={13} /> Tailscale</span></div><div className="mini-footer"><span>{health?.critical_alerts ?? 0} rilevazioni critiche</span><button onClick={() => navigate('Health checks')}>Visualizza controlli <ArrowUpRight size={13} /></button></div></div>
         <div className="mini-panel network-panel"><div className="mini-heading"><div className="mini-icon purple"><Wifi size={16} /></div><div><h3>Network & DNS</h3><span>Sincronizzazione OVH DynHost</span></div><span className="status-pill healthy">Sincronizzato</span></div><div className="network-value"><strong>185.142.64.21</strong><span>IP pubblico · aggiornato 18 minuti fa</span></div><div className="mini-footer"><span>12 record DNS sani</span><button onClick={() => navigate('DNS & DynHost')}>Gestisci DNS <ArrowUpRight size={13} /></button></div></div>
         <div className="mini-panel manager-panel"><div className="mini-heading"><div className="mini-icon purple"><Blocks size={16} /></div><div><h3>MSCC Manager</h3><span>{manager?.worker_id ?? 'report-worker'}</span></div><span className={`status-pill ${manager ? manager.worker_online ? 'healthy' : 'warning' : 'maintenance'}`}>{manager ? manager.worker_online ? 'Attivo' : 'Non raggiungibile' : 'In attesa'}</span></div><div className="manager-value"><strong>Report ore {manager?.report_time ?? '11:15'}</strong><span>{manager?.timezone ?? 'Europe/Rome'} · {manager?.active_alerts ?? 0} alert attivi</span></div><div className="mini-footer"><span>{manager?.last_report ? 'Ultimo report disponibile' : 'Nessun report generato'}</span><button onClick={generateReport}>Genera ora <ArrowUpRight size={13} /></button></div></div>
       </section>
@@ -438,41 +644,50 @@ function ActivityRow({ item }: { item: ActivityItem }) {
   return <div className="activity-row"><div className={`activity-icon ${item.kind}`}>{item.kind === 'success' ? <Check size={14} /> : item.kind === 'warning' ? <AlertTriangle size={14} /> : <Globe2 size={14} />}</div><div><strong>{item.title}</strong><span>{item.detail}</span></div><time>{item.time}</time></div>
 }
 
-function ModulePage({ module, navigate, notify }: { module: string; navigate: (page: string) => void; notify: (message: string) => void }) {
+function ModulePage({ module, nodes, services, navigate, notify, refresh }: { module: string; nodes: Node[]; services: Service[]; navigate: (page: string) => void; notify: (message: string) => void; refresh: () => void }) {
   const content: Record<string, { icon: Icon; eyebrow: string; title: string; description: string; action: string }> = {
     Nodes: { icon: Server, eyebrow: 'Gestione flotta', title: 'Nodes', description: 'Gestisci ogni server della tua infrastruttura da un unico punto.', action: 'Connetti nodo' },
     Services: { icon: Globe2, eyebrow: 'Catalogo applicazioni', title: 'Services', description: 'Monitora le applicazioni web pubblicate sui tuoi nodi.', action: 'Aggiungi servizio' },
     Docker: { icon: Container, eyebrow: 'Runtime container', title: 'Docker', description: 'Ispeziona container, immagini, volumi e risorse di runtime.', action: 'Aggiorna dati' },
     Networks: { icon: Network, eyebrow: 'Infrastruttura', title: 'Networks', description: 'Esamina le reti Docker e i workload collegati.', action: 'Crea rete' },
-    Volumes: { icon: HardDrive, eyebrow: 'Infrastruttura', title: 'Volumes', description: 'Controlla lo storage persistente e l’utilizzo sui nodi.', action: 'Aggiorna dati' },
+    Volumes: { icon: HardDrive, eyebrow: 'Infrastruttura', title: 'Volumes', description: "Controlla lo storage persistente e l'utilizzo sui nodi.", action: 'Aggiorna dati' },
     Images: { icon: Package, eyebrow: 'Runtime container', title: 'Images', description: 'Gestisci le versioni delle immagini e gli aggiornamenti disponibili.', action: 'Scarica immagine' },
     'Reverse Proxy': { icon: Globe2, eyebrow: 'Instradamento edge', title: 'Reverse Proxy', description: 'Monitora host, redirect ed errori di Nginx Proxy Manager.', action: 'Aggiungi proxy host' },
     'Domains & SSL': { icon: LockKeyhole, eyebrow: 'Edge e sicurezza', title: 'Domains & SSL', description: 'Mantieni domini e certificati sani prima della scadenza.', action: 'Aggiungi dominio' },
-    'DNS & DynHost': { icon: Wifi, eyebrow: 'Servizi di rete', title: 'DNS & DynHost', description: 'Sincronizza i record OVH e monitora i cambi dell’IP pubblico.', action: 'Sincronizza record' },
+    'DNS & DynHost': { icon: Wifi, eyebrow: 'Servizi di rete', title: 'DNS & DynHost', description: "Sincronizza i record OVH e monitora i cambi dell'IP pubblico.", action: 'Sincronizza record' },
     Backups: { icon: Database, eyebrow: 'Continuità operativa', title: 'Backups', description: 'Verifica aggiornamento, dimensione, durata e retention dei backup.', action: 'Avvia backup' },
-    Logs: { icon: TerminalSquare, eyebrow: 'Osservabilità', title: 'Logs', description: 'Cerca attività e log di runtime sull’intera flotta.', action: 'Esporta log' },
+    Logs: { icon: TerminalSquare, eyebrow: 'Osservabilità', title: 'Logs', description: "Cerca attività e log di runtime sull'intera flotta.", action: 'Esporta log' },
     'Health checks': { icon: ShieldCheck, eyebrow: 'Osservabilità', title: 'Health checks', description: 'Definisci controlli per servizi, nodi, sicurezza e connettività.', action: 'Crea controllo' },
-    Reports: { icon: FileText, eyebrow: 'Operazioni', title: 'Reports', description: 'Genera report mattutini e riepiloghi dell’infrastruttura da condividere.', action: 'Genera report' },
+    Reports: { icon: FileText, eyebrow: 'Operazioni', title: 'Reports', description: "Genera report mattutini e riepiloghi dell'infrastruttura da condividere.", action: 'Genera report' },
     Settings: { icon: Settings, eyebrow: 'Area di lavoro', title: 'Settings', description: 'Configura integrazioni, notifiche, utenti e preferenze della piattaforma.', action: 'Salva modifiche' }
   }
   const current = content[module] ?? content.Nodes
   const PageIcon = current.icon
   const isNodes = module === 'Nodes'
   return <div className="module-page"><section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />{current.eyebrow}</div><h1><span className="title-icon"><PageIcon size={25} /></span>{current.title}</h1><p>{current.description}</p></div><button className="button button-primary" onClick={() => notify(`${current.action} in coda`)}><Plus size={16} />{current.action}</button></section>
-    <div className="module-toolbar"><div className="inline-search"><Search size={14} /><input placeholder={`Cerca in ${current.title.toLowerCase()}...`} /></div><button className="button button-secondary" onClick={() => notify('Dati aggiornati proprio ora')}><RefreshCw size={15} />Aggiorna</button></div>
-    {isNodes ? <div className="module-node-grid">{nodes.map((node) => <NodeCard key={node.name} node={node} onOpen={() => notify(`Dettagli di ${node.name} aperti`)} />)}<button className="add-node-card large" onClick={() => notify('Procedura di registrazione nodo aperta')}><div><Plus size={19} /></div><strong>Connetti un nuovo nodo</strong><span>Installa l’agente MSCC su un server Linux</span></button></div> : <ModuleTable module={module} notify={notify} />}
-    <div className="module-note"><Sparkles size={15} /><span>Questo modulo è pronto per i dati forniti dalle API. Collega l’agente MSCC per sostituire i dati di esempio con quelli della tua infrastruttura.</span><button onClick={() => navigate('Settings')}>Configura integrazioni <ArrowUpRight size={13} /></button></div>
+    <div className="module-toolbar"><div className="inline-search"><Search size={14} /><input placeholder={`Cerca in ${current.title.toLowerCase()}...`} /></div><button className="button button-secondary" onClick={() => { refresh(); notify('Dati aggiornati proprio ora') }}><RefreshCw size={15} />Aggiorna</button></div>
+    {isNodes ? <div className="module-node-grid">{nodes.map((node) => <NodeCard key={node.id} node={node} onOpen={() => notify(`Dettagli di ${node.name} aperti`)} />)}<button className="add-node-card large" onClick={() => notify('Procedura di registrazione nodo aperta')}><div><Plus size={19} /></div><strong>Connetti un nuovo nodo</strong><span>Installa l'agente MSCC su un server Linux</span></button></div> : <ModuleTable module={module} nodes={nodes} services={services} notify={notify} />}
+    <div className="module-note"><Sparkles size={15} /><span>Questo modulo è pronto per i dati forniti dalle API. Collega l'agente MSCC per sostituire i dati di esempio con quelli della tua infrastruttura.</span><button onClick={() => navigate('Settings')}>Configura integrazioni <ArrowUpRight size={13} /></button></div>
   </div>
 }
 
-function ModuleTable({ module, notify }: { module: string; notify: (message: string) => void }) {
-  const rows = module === 'Domains & SSL' ? [['microsaas.dev', 'Cloudflare', 'Valid', '89 giorni'], ['flows.microsaas.dev', 'OVH DNS', 'Expiring', '14 giorni'], ['vault.microsaas.dev', 'OVH DNS', 'Valid', '102 giorni']] : module === 'Backups' ? [['Mac mini · S3', 'Incrementale', 'Completed', '4,8 GB'], ['Raspberry Pi · NAS', 'Completo', 'Completed', '12,2 GB'], ['VPS Europe · S3', 'Incrementale', 'Completed', '2,1 GB']] : module === 'Docker' ? [['Mac mini', '18 container', 'Healthy', 'Docker 27.4.1'], ['Raspberry Pi', '7 container', 'Warning', 'Docker 26.1.4'], ['VPS Europe', '11 container', 'Healthy', 'Docker 27.3.1']] : [['Status Page', 'Mac mini', 'Healthy', '182 ms'], ['Analytics Hub', 'VPS Europe', 'Healthy', '241 ms'], ['n8n Automations', 'Mac mini', 'Degraded', '1,2 s'], ['Vaultwarden', 'Raspberry Pi', 'Healthy', '204 ms']]
-  const statusLabels: Record<string, string> = { Healthy: 'Sano', Warning: 'Attenzione', Expiring: 'In scadenza', Completed: 'Completato', Degraded: 'Degradato' }
+function ModuleTable({ module, nodes, services, notify }: { module: string; nodes: Node[]; services: Service[]; notify: (message: string) => void }) {
+  let rows: string[][]
+  if (module === 'Domains & SSL') {
+    rows = services.map(s => [s.domain, s.node, s.sslDays <= 30 ? 'Expiring' : 'Healthy', `${s.sslDays} giorni`])
+  } else if (module === 'Backups') {
+    rows = [['Mac mini · S3', 'Incrementale', 'Completed', '4,8 GB'], ['Raspberry Pi · NAS', 'Completo', 'Completed', '12,2 GB'], ['VPS Europe · S3', 'Incrementale', 'Completed', '2,1 GB']]
+  } else if (module === 'Docker') {
+    rows = nodes.map(n => [n.name, `${n.containers} container`, n.status === 'online' ? 'Healthy' : 'Degraded', `Docker ${n.dockerVersion}`])
+  } else {
+    rows = services.map(s => [s.name, s.node, s.status, s.response])
+  }
+  const statusLabels: Record<string, string> = { Healthy: 'Sano', Degraded: 'Degradato', Stopped: 'Fermato', Expiring: 'In scadenza', Completed: 'Completato' }
   return <div className="data-table-wrap"><table><thead><tr><th>Risorsa</th><th>Posizione</th><th>Stato</th><th>Dettagli</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row[0]}><td><strong>{row[0]}</strong></td><td>{row[1]}</td><td><span className={`service-status ${row[2].toLowerCase()}`}><span />{statusLabels[row[2]] ?? row[2]}</span></td><td>{row[3]}</td><td><button className="open-button" onClick={() => notify(`Dettagli di ${row[0]} aperti`)}>Visualizza <ArrowUpRight size={12} /></button></td></tr>)}</tbody></table></div>
 }
 
 function NodeDrawer({ node, onClose, notify }: { node: Node; onClose: () => void; notify: (message: string) => void }) {
-  return <div className="drawer-backdrop" onClick={onClose}><aside className="node-drawer" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><span className="eyebrow">Dettagli nodo</span><h2>{node.name}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div><div className="drawer-status"><span className="pulse-dot" />{node.status === 'online' ? 'Online e funzionante' : 'Richiede attenzione'}<span>{node.host}</span></div><div className="drawer-section"><span className="drawer-label">Sistema</span><div className="detail-grid"><div><span>Sistema operativo</span><strong>{node.os}</strong></div><div><span>Architettura</span><strong>{node.arch}</strong></div><div><span>Uptime</span><strong>{node.uptime}</strong></div><div><span>Temperatura</span><strong>{node.temperature}° C</strong></div></div></div><div className="drawer-section"><span className="drawer-label">Utilizzo risorse</span><MetricBar label="CPU" value={node.cpu} color="purple" /><MetricBar label="RAM" value={node.ram} color="blue" /><MetricBar label="Disco" value={node.disk} color="orange" /></div><div className="drawer-section"><span className="drawer-label">Runtime</span><div className="runtime-row"><Container size={16} /><span>Docker Engine</span><strong>27.4.1</strong></div><div className="runtime-row"><Blocks size={16} /><span>Docker Compose</span><strong>v2.32.1</strong></div></div><div className="drawer-actions"><button className="button button-secondary" onClick={() => notify('Modalità manutenzione nodo attivata')}>Manutenzione</button><button className="button button-primary" onClick={() => notify('Dettagli nodo aggiornati')}><RefreshCw size={15} />Aggiorna</button></div></aside></div>
+  return <div className="drawer-backdrop" onClick={onClose}><aside className="node-drawer" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><span className="eyebrow">Dettagli nodo</span><h2>{node.name}</h2></div><button className="icon-button" onClick={onClose}><X size={18} /></button></div><div className="drawer-status"><span className="pulse-dot" />{node.status === 'online' ? 'Online e funzionante' : node.status === 'warning' ? 'Richiede attenzione' : node.status === 'maintenance' ? 'In manutenzione' : 'Non raggiungibile'}<span>{node.host}</span></div><div className="drawer-section"><span className="drawer-label">Sistema</span><div className="detail-grid"><div><span>Sistema operativo</span><strong>{node.os}</strong></div><div><span>Architettura</span><strong>{node.arch}</strong></div><div><span>Uptime</span><strong>{node.uptime}</strong></div><div><span>Temperatura</span><strong>{node.temperature}° C</strong></div></div></div><div className="drawer-section"><span className="drawer-label">Utilizzo risorse</span><MetricBar label="CPU" value={node.cpu} color="purple" /><MetricBar label="RAM" value={node.ram} color="blue" /><MetricBar label="Disco" value={node.disk} color="orange" /></div><div className="drawer-section"><span className="drawer-label">Runtime</span><div className="runtime-row"><Container size={16} /><span>Docker Engine</span><strong>{node.dockerVersion}</strong></div><div className="runtime-row"><Blocks size={16} /><span>Docker Compose</span><strong>v{node.dockerComposeVersion}</strong></div></div><div className="drawer-actions"><button className="button button-secondary" onClick={() => notify('Modalità manutenzione nodo attivata')}>Manutenzione</button><button className="button button-primary" onClick={() => notify('Dettagli nodo aggiornati')}><RefreshCw size={15} />Aggiorna</button></div></aside></div>
 }
 
 function CommandPalette({ navigate, onClose }: { navigate: (page: string) => void; onClose: () => void }) {
